@@ -64,7 +64,6 @@ void q_free(queue_t *q) // ~q (destructor)
         q_remove_head(q, NULL, 0);
     }
     free(q);
-
 }
 
 /*
@@ -76,20 +75,13 @@ void q_free(queue_t *q) // ~q (destructor)
  */
 bool q_insert_head(queue_t *q, char *s) // this is a stack function
 {
-    list_ele_t *newh; // new header element
-    char * news; // new string element
-    bool flag = false;
-    int newsLen;
-
-    // printf("len: %lu malloc size: %lu\n", strlen(s), strlen(s) * sizeof(char) +1);
-
     /* Bad input values */
     if (q == NULL || s == NULL)  
-        return flag; // this will jump to the end and return False
+        return false; // this will jump to the end and return False
 
-    newsLen = strlen(s) + 1;
-    newh = malloc(sizeof(list_ele_t *)); // make a new element for the list
-    news = malloc(newsLen); // allocate space for new string to exactly the length of 's' PLUS the null terminator
+    int newsLen = strlen(s) + 1;
+    list_ele_t *newh = malloc(sizeof(list_ele_t)); // make a new element for the list
+    char *news = malloc(newsLen); // allocate space for new string to exactly the length of 's' PLUS the null terminator
     
     /* What if either call to malloc returns NULL? */
     if (newh == NULL || news == NULL)
@@ -97,39 +89,31 @@ bool q_insert_head(queue_t *q, char *s) // this is a stack function
         // if one succeeds but the other doesn't
         if (newh != NULL) free(newh);
         if (news != NULL) free(news);
-        return flag;
+        return false;
     }
 
     strncpy(news, s, newsLen); // copy the value of input s into the news string
+    newh->next = NULL;
     newh->value = news; // place the new string into the new header's value property
     
     if (q->size == 0) // queue was empty
     {
         q->head = q->tail = newh;
-        q->head->next = NULL;
-        q->tail->next = NULL;
-        flag = true;
-        q->size++;
     }
     else if (q->size == 1)
     {
         newh->next = q->head;
         q->tail = q->head;
-        q->head = newh;
-        flag = true;
-        q->size++;        
+        q->head = newh;  
     }
     else
     {
         newh->next = q->head; // take the current header and store it in newh.next
         q->head = newh; // set the header to the newh
-        flag = true; // set return flag to true since we succeeded
-        q->size++;
     }
 
-    //free(newh);
-    //free(news);
-    return flag;
+    q->size++;
+    return true;
 }
 
 /*
@@ -141,19 +125,15 @@ bool q_insert_head(queue_t *q, char *s) // this is a stack function
  */
 bool q_insert_tail(queue_t *q, char *s) // this is a queue function
 {
-    list_ele_t *newt; // create new tail element
-    char *news; // create new string element
-    int newsLen;
-
     /* Handle bad inputs */
     if (q == NULL || s == NULL)
     {
         return false; // return False
     }
 
-    newsLen = strlen(s) + 1;
-    newt = malloc(sizeof(list_ele_t)); // allocate space for new tail
-    news = malloc(newsLen); // allocate space for new string to exactly the length of 's' + null char
+    int newsLen = strlen(s) + 1;
+    list_ele_t *newt = malloc(sizeof(list_ele_t)); // allocate space for new tail
+    char *news = malloc(newsLen); // allocate space for new string to exactly the length of 's' + null char
 
     // if either malloc returns null, return will == false
     if (newt == NULL || news == NULL)
@@ -164,6 +144,7 @@ bool q_insert_tail(queue_t *q, char *s) // this is a queue function
     }
 
     strncpy(news, s, newsLen); // copy string but include space for the null character
+    newt->next = NULL;
     newt->value = news;
 
     /*
@@ -194,33 +175,55 @@ bool q_insert_tail(queue_t *q, char *s) // this is a queue function
 */
 bool q_remove_head(queue_t *q, char *sp, size_t bufsize)
 {
-    list_ele_t *tmp;
     bool flag = false;
-    if (q == NULL || q->size == 0)
+    if (q == NULL || q->size == 0 || q->head == NULL)
     {
-        return flag; // return False
+        return flag; // return False....there's no head to remove
     }
+
+    list_ele_t *tmp = q->head;
+    q->head = q->head->next; // set the value of q.head to q.head.next
 
     if (sp != NULL)
     {
-        tmp = q->head; // put the value of q.head into tmp
-        q->head = q->head->next; // set the value of q.head to q.head.next
-        strncpy(sp, tmp->value, bufsize - 1); // copy the string to the sp variable
-        free(tmp->value); // free the old header value memory
-        free(tmp); // free the old header memory
-        flag = true;
-        q->size--; // decrement the size of the queue
-    }
-    else
-    {
-        tmp = q->head; // put the value of q.head into tmp
-        q->head = q->head->next; // set the value of q.head to q.head.next
-        free(tmp->value); // free the old header value memory
-        free(tmp); // free the old header memory
-        flag = true;
-        q->size--; // decrement the size of the queue
+        /*
+            This gets a little tricky. The idea is to copy ONLY the string
+            that was entered into the console to sp...at least up to the 
+            size of bufsize-1.
+            Ex.
+            q = [one_two_three_four]
+            cmd> rh one
+            Removed one from queue
 
+            ***** sp: one
+
+            NOTE: q held only a single element: one_two_three_four, which is technically one word one string one element.
+            If we just copied the entire element into sp, sp would hold "one_two_three_four" instead of "one".
+
+            So to do this we watch for the null terminator at the end of the input string and use that to end the copy.
+            Couldn't figure out a robust way to do this with strncpy, so I wrote my own copy function. ¯\_(ツ)_/¯
+        */
+        char *spReturn = sp; // holds ptr to start of sp
+        char *tmpTemp = tmp->value;
+        int i = 0;
+        while(i < bufsize-1 && *tmpTemp != '\0')
+        {
+            // *sp = *tmpTemp;
+            // sp++;
+            // tmpTemp++;
+            // i++;
+
+            *sp++ = *tmpTemp++; // copy tmpTemp char into sp and then increment both
+            i++; // increment i
+        }
+        *sp = '\0'; // terminate sp
+        sp = spReturn; // set sp back to its original value (beginning of copied string)
     }
+
+    free(tmp->value); // free the old header value memory
+    free(tmp); // free the old header memory
+    flag = true;
+    q->size--; // decrement the size of the queue
 
     return flag;
 }
