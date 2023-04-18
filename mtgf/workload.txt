@@ -1,0 +1,4 @@
+/filecorpus/paraglider.jpg
+/filecorpus/road.jpg
+/filecorpus/yellowstone.jpg
+/filecorpus/moranabovejacksonlake.jpg

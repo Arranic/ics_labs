@@ -1,0 +1,58 @@
+{
+    "tests": [
+        {
+            "client_console": "nrequests: 1, nthreads: 4\nBeginning thread #139938474489408\nBeginning thread #139938466096704\nBeginning thread #139938457704000\nBeginning thread #139938449311296\nInside thread. Calling worker function.\nInside thread #139938449311296. Making requests.\nAdded item #1 to queue\nRequesting localhost/filecorpus/paraglider.jpg\nStatus: GF_OK\nReceived 233174 of 233174 bytes\n",
+            "client_returncode": "-15",
+            "server_console": "enqueue path: /filecorpus/paraglider.jpg\nAdding CTX: 0x604000000010, File: /filecorpus/paraglider.jpg, Arg: (nil) to queue\nThread CTX: 0x604000000010, File: /filecorpus/paraglider.jpg, Arg: (nil)\nfile: /filecorpus/paraglider.jpg\ngot request for: /filecorpus/paraglider.jpg\n",
+            "server_returncode": "15",
+            "extra_data": "Test Failed: 0 != -15\n",
+            "passfail": "failed",
+            "name": "Test for boss worker model using pthreads"
+        },
+        {
+            "client_console": "gcc -c -o workload.o -Wall -Werror --std=gnu99 -g3 -no-pie -fsanitize=address -fno-omit-frame-pointer -Wno-format-security workload.c\ngcc -c -o gfclient_download.o -Wall -Werror --std=gnu99 -g3 -no-pie -fsanitize=address -fno-omit-frame-pointer -Wno-format-security gfclient_download.c\ngcc -c -o steque.o -Wall -Werror --std=gnu99 -g3 -no-pie -fsanitize=address -fno-omit-frame-pointer -Wno-format-security steque.c\ngcc -o gfclient_download -Wall -Werror --std=gnu99 -g3 -no-pie -fsanitize=address -fno-omit-frame-pointer -Wno-format-security gfclient.o workload.o gfclient_download.o steque.o -lpthread  -static-libasan\n",
+            "client_returncode": "0",
+            "extra_data": "",
+            "passfail": "passed",
+            "name": "Test that the client compiles"
+        },
+        {
+            "client_console": "nrequests: 2, nthreads: 4\nBeginning thread #139983447914048\nBeginning thread #139983439521344\nBeginning thread #139983431128640\nBeginning thread #139983422735936\nAdded item #1 to queue\nInside thread. Calling worker function.\nInside thread. Calling worker function.\nInside thread #139983447914048. Making requests.\nInside thread #139983422735936. Making requests.\nAdded item #1 to queue\nRequesting localhost/filecorpus/road.jpg\nRequesting localhost/filecorpus/paraglider.jpg\nStatus: GF_OK\nReceived 138177 of 138177 bytes\nRequesting localhost/filecorpus/yellowstone.jpg\nStatus: GF_OK\nReceived 233174 of 233174 bytes\nRequesting localhost/filecorpus/moranabovejacksonlake.jpg\nStatus: GF_OK\nReceived 104244 of 104244 bytes\nStatus: GF_OK\nReceived 452231 of 452231 bytes\n",
+            "client_returncode": "-15",
+            "server_console": "enqueue path: /filecorpus/road.jpg\nAdding CTX: 0x604000000010, File: /filecorpus/road.jpg, Arg: (nil) to queue\nenqueue path: /filecorpus/paraglider.jpg\nAdding CTX: 0x604000000050, File: /filecorpus/paraglider.jpg, Arg: (nil) to queue\nThread CTX: 0x604000000010, File: /filecorpus/road.jpg, Arg: (nil)\nfile: /filecorpus/road.jpg\ngot request for: /filecorpus/road.jpg\nThread CTX: 0x604000000050, File: /filecorpus/paraglider.jpg, Arg: (nil)\nfile: /filecorpus/paraglider.jpg\ngot request for: /filecorpus/paraglider.jpg\nenqueue path: /filecorpus/yellowstone.jpg\nAdding CTX: 0x604000000090, File: /filecorpus/yellowstone.jpg, Arg: (nil) to queue\nThread CTX: 0x604000000090, File: /filecorpus/yellowstone.jpg, Arg: (nil)\nfile: /filecorpus/yellowstone.jpg\ngot request for: /filecorpus/yellowstone.jpg\nenqueue path: /filecorpus/moranabovejacksonlake.jpg\nAdding CTX: 0x6040000000d0, File: /filecorpus/moranabovejacksonlake.jpg, Arg: (nil) to queue\nThread CTX: 0x6040000000d0, File: /filecorpus/moranabovejacksonlake.jpg, Arg: (nil)\nfile: /filecorpus/moranabovejacksonlake.jpg\ngot request for: /filecorpus/moranabovejacksonlake.jpg\n",
+            "server_returncode": "15",
+            "extra_data": "Test Failed: 0 != -15\n",
+            "passfail": "failed",
+            "name": "Test that the client threads issue multiple requests"
+        },
+        {
+            "client_console": "nrequests: 1, nthreads: 4\nBeginning thread #140682148705856\nBeginning thread #140682140313152\nBeginning thread #140682131920448\nBeginning thread #140682123527744\nAdded item #1 to queue\nInside thread. Calling worker function.\nInside thread #140682123527744. Making requests.\nRequesting localhost/filecorpus/paraglider.jpg\nStatus: GF_OK\nReceived 233174 of 233174 bytes\n",
+            "client_returncode": "-15",
+            "server_console": "enqueue path: /filecorpus/paraglider.jpg\nAdding CTX: 0x604000000010, File: /filecorpus/paraglider.jpg, Arg: (nil) to queue\nThread CTX: 0x604000000010, File: /filecorpus/paraglider.jpg, Arg: (nil)\nfile: /filecorpus/paraglider.jpg\ngot request for: /filecorpus/paraglider.jpg\n",
+            "server_returncode": "15",
+            "extra_data": "Test Failed: 0 != -15\n",
+            "passfail": "failed",
+            "name": "Test that the client uses multiple threads while downloading small-sized files"
+        },
+        {
+            "client_console": "nrequests: 1, nthreads: 4\nBeginning thread #140569030424128\nBeginning thread #140569022031424\nBeginning thread #140569013638720\nBeginning thread #140569005246016\nAdded item #1 to queue\nInside thread. Calling worker function.\nInside thread #140569005246016. Making requests.\nRequesting localhost/filecorpus/paraglider.jpg\nStatus: GF_OK\nReceived 233174 of 233174 bytes\n",
+            "client_returncode": "-15",
+            "server_console": "enqueue path: /filecorpus/paraglider.jpg\nAdding CTX: 0x604000000010, File: /filecorpus/paraglider.jpg, Arg: (nil) to queue\nThread CTX: 0x604000000010, File: /filecorpus/paraglider.jpg, Arg: (nil)\nfile: /filecorpus/paraglider.jpg\ngot request for: /filecorpus/paraglider.jpg\n",
+            "server_returncode": "15",
+            "extra_data": "Test Failed: 0 != -15\n",
+            "passfail": "failed",
+            "name": "Test to ensure initialization and cleanup are done properly"
+        },
+        {
+            "client_console": "nrequests: 1, nthreads: 2\nBeginning thread #140170908137024\nBeginning thread #140170899744320\nAdded item #1 to queue\nInside thread. Calling worker function.\nInside thread #140170899744320. Making requests.\nRequesting localhost/filecorpus/binary.exe\nStatus: GF_OK\nReceived 1779536 of 1779536 bytes\n",
+            "client_returncode": "-15",
+            "server_console": "enqueue path: /filecorpus/binary.exe\nAdding CTX: 0x604000000010, File: /filecorpus/binary.exe, Arg: (nil) to queue\nThread CTX: 0x604000000010, File: /filecorpus/binary.exe, Arg: (nil)\nfile: /filecorpus/binary.exe\ngot request for: /filecorpus/binary.exe\n",
+            "server_returncode": "15",
+            "extra_data": "Test Failed: 0 != -15\n",
+            "passfail": "failed",
+            "name": "Test to ensure multi-threaded client can download a large file"
+        }
+    ],
+    "execution_time": "56.10",
+    "score": "1.0/6"
+}
