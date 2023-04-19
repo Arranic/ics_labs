@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <stdint.h>
 #include <pthread.h>
+#include <signal.h>
 
 #include "workload.h"
 #include "gfclient.h"
@@ -33,20 +34,19 @@ static struct option gLongOptions[] = {
     {"help", no_argument, NULL, 'h'},
     {NULL, 0, NULL, 0}};
 
-pthread_mutex_t mutexQ;
-pthread_cond_t condQ;
-int numRequests = 0;
-steque_t *request_queue;
-
 typedef struct threadInfo_t
 {
     int numRequests;
     int numThreads;
     int returnCode;
-    // char *req_path;
     char *server;
     unsigned short port;
 } threadInfo_t;
+
+pthread_mutex_t mutexQ;
+pthread_cond_t condQ;
+int numRequests = 0;
+steque_t *request_queue;
 
 static void Usage()
 {
@@ -101,7 +101,7 @@ static void writecb(void *data, size_t data_len, void *arg)
     fwrite(data, 1, data_len, file);
 }
 
-void worker(threadInfo_t *thread_info)
+int worker(threadInfo_t *thread_info)
 {
     int nrequests = thread_info->numRequests;
     char *req_path;       // the path to the file
@@ -112,6 +112,7 @@ void worker(threadInfo_t *thread_info)
     strncpy(server, thread_info->server, 99);
     unsigned short port = thread_info->port;
     int returncode;
+    int returnStatus = 0;
 
     fprintf(stderr, "Inside thread #%ld. Making requests.\n", pthread_self());
     /*Making the requests...*/
@@ -123,7 +124,8 @@ void worker(threadInfo_t *thread_info)
         if (strlen(req_path) > 256)
         {
             fprintf(stderr, "Request path exceeded maximum of 256 characters\n.");
-            exit(EXIT_FAILURE);
+            returnStatus = -20;
+            // exit(EXIT_FAILURE);
         }
 
         localPath(req_path, local_path);
@@ -144,7 +146,10 @@ void worker(threadInfo_t *thread_info)
             fprintf(stderr, "gfc_perform returned an error %d\n", returncode);
             fclose(file);
             if (0 > unlink(local_path))
+            {
                 fprintf(stderr, "unlink failed on %s\n", local_path);
+                returnStatus = -21;
+            }
         }
         else
         {
@@ -154,7 +159,10 @@ void worker(threadInfo_t *thread_info)
         if (gfc_get_status(gfr) != GF_OK)
         {
             if (0 > unlink(local_path))
+            {
                 fprintf(stderr, "unlink failed on %s\n", local_path);
+                returnStatus = -22;
+            }
         }
 
         fprintf(stderr, "Status: %s\n", gfc_strstatus(gfc_get_status(gfr)));
@@ -163,33 +171,40 @@ void worker(threadInfo_t *thread_info)
 
         gfc_cleanup(gfr);
     }
+    fprintf(stderr, "Returning from worker function.\n");
+    return returnStatus;
 }
 
 /* ultra totally thread safety hopefully I think */
 void *thread_routine(void *args)
 {
     fprintf(stderr, "Beginning thread #%ld\n", pthread_self());
-    while (1)
+
+    int workerStatus; // return value from worker
+    steque_node_t *node;
+
+    pthread_mutex_lock(&mutexQ); // lock the Q so we're the only one to use it
+    while (numRequests == 0)
     {
-        steque_node_t *node;
-
-        pthread_mutex_lock(&mutexQ); // lock the Q so we're the only one to use it
-        while (numRequests == 0)
-        {
-            pthread_cond_wait(&condQ, &mutexQ);
-        }
-
-        if (!steque_isempty(request_queue))
-        {
-            node = steque_pop(request_queue); // get the request at the front of the queue
-            numRequests--;                    // decrement the number of requests we have in the queue
-        }
-
-        pthread_mutex_unlock(&mutexQ); // now that we're done modifying the queue, unlock it
-
-        fprintf(stderr, "Inside thread. Calling worker function.\n");
-        worker((threadInfo_t *)node); // finally call the worker to handle the connection to the server
+        // fprintf(stderr, "Stuck in infinite thread loop\n");
+        pthread_cond_wait(&condQ, &mutexQ);
     }
+
+    if (!steque_isempty(request_queue))
+    {
+        node = steque_pop(request_queue); // get the request at the front of the queue
+        numRequests--;                    // decrement the number of requests we have in the queue
+    }
+
+    // pthread_cond_signal(&condQ);
+    pthread_mutex_unlock(&mutexQ); // now that we're done modifying the queue, unlock it
+
+    fprintf(stderr, "Inside thread. Calling worker function.\n");
+    workerStatus = worker((threadInfo_t *)node); // finally call the worker to handle the connection to the server
+
+    fprintf(stderr, "Returning from thread with status %d.\n", workerStatus);
+
+    pthread_exit((void *)(unsigned long)workerStatus);
 }
 
 /* enqueue an item in a thread-safe manner and increase the numRequests tracker variable */
@@ -198,10 +213,9 @@ void submit_to_queue(steque_t *q, threadInfo_t *element)
     pthread_mutex_lock(&mutexQ);
     steque_enqueue(q, (steque_item)element);
     numRequests++;
+    pthread_cond_signal(&condQ); // signal to thread to start work
     pthread_mutex_unlock(&mutexQ);
     fprintf(stderr, "Added item #%d to queue\n", steque_size(request_queue));
-    // pthread_cond_signal(&condQ);
-    pthread_cond_broadcast(&condQ);
 }
 
 /* Main ========================================================= */
@@ -215,12 +229,6 @@ int main(int argc, char **argv)
     int option_char = 0;
     int nrequests = 1;
     int nthreads = 1;
-    // int i;
-    // int returncode;
-    // gfcrequest_t *gfr;
-    // FILE *file;
-    // char *req_path;
-    // char local_path[512];
 
     // Parse and set command line arguments
     while ((option_char = getopt_long(argc, argv, "s:p:w:n:t:h", gLongOptions, NULL)) != -1)
@@ -278,29 +286,33 @@ int main(int argc, char **argv)
     // create the threads for the thread pool
     for (int i = 0; i < nthreads; i++)
     {
-        if (pthread_create(&thread_pool[i], NULL, thread_routine, (void *)thread_pool[i]) != 0)
+        if (pthread_create(&thread_pool[i], NULL, thread_routine, NULL /*(void *)thread_pool[i]*/) != 0)
         {
             fprintf(stderr, "Failed to create threads.\n");
         }
     }
 
     for (int j = 0; j < nrequests; j++)
-    {
-        // req_path = workload_get_path();
-        // if (strlen(req_path) > 256)
-        // {
-        //     fprintf(stderr, "Request path exceeded maximum of 256 characters\n.");
-        //     exit(EXIT_FAILURE);
-        // }
         submit_to_queue(request_queue, info);
+
+    // fprintf(stderr, "Trying to join threads.\n");
+    for (int k = 0; k < nthreads; k++)
+    {
+        pthread_join(thread_pool[k], NULL);
+        fprintf(stderr, "Joining threads.\n");
+        // exit(0);
     }
 
-    pthread_exit(NULL); // ask the program to wait until the workers are done
+    fprintf(stderr, "Join threads action completed.\n");
+
+    // pthread_exit(NULL); // ask the program to wait until the workers are done
     pthread_mutex_destroy(&mutexQ);
     pthread_cond_destroy(&condQ);
-    gfc_global_cleanup();
     steque_destroy(request_queue);
     free(request_queue);
+    free(info);
+    gfc_global_cleanup();
 
-    return 0;
+    fprintf(stderr, "Program execution complete. Exiting...\n");
+    exit(0);
 }
