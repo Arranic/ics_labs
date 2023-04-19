@@ -7,7 +7,7 @@
 #include <unistd.h>
 #include <stdint.h>
 #include <pthread.h>
-#include <signal.h>
+#include <stdbool.h>
 
 #include "workload.h"
 #include "gfclient.h"
@@ -47,6 +47,7 @@ pthread_mutex_t mutexQ;
 pthread_cond_t condQ;
 int numRequests = 0;
 steque_t *request_queue;
+bool isReady = false;
 
 static void Usage()
 {
@@ -101,7 +102,7 @@ static void writecb(void *data, size_t data_len, void *arg)
     fwrite(data, 1, data_len, file);
 }
 
-int worker(threadInfo_t *thread_info)
+int worker(threadInfo_t *thread_info, int tNum)
 {
     int nrequests = thread_info->numRequests;
     char *req_path;       // the path to the file
@@ -114,7 +115,8 @@ int worker(threadInfo_t *thread_info)
     int returncode;
     int returnStatus = 0;
 
-    fprintf(stderr, "Inside thread #%ld. Making requests.\n", pthread_self());
+    fprintf(stderr, "Inside thread #%d. Making requests.\n", tNum);
+    // fprintf(stderr, "Inside thread #%ld. Making requests.\n", pthread_self());
     /*Making the requests...*/
     for (int i = 0; i < nrequests; i++)
     {
@@ -167,55 +169,75 @@ int worker(threadInfo_t *thread_info)
 
         fprintf(stderr, "Status: %s\n", gfc_strstatus(gfc_get_status(gfr)));
         fprintf(stderr, "Received %zu of %zu bytes\n", gfc_get_bytesreceived(gfr), gfc_get_filelen(gfr));
-        fprintf(stderr, "Return code: %d\n", returncode);
 
         gfc_cleanup(gfr);
     }
-    fprintf(stderr, "Returning from worker function.\n");
+
+    fprintf(stderr, "Returning from worker function with status: %d.\n", returncode);
     return returnStatus;
 }
 
 /* ultra totally thread safety hopefully I think */
 void *thread_routine(void *args)
 {
-    fprintf(stderr, "Beginning thread #%ld\n", pthread_self());
+    int tNum = *((int *)args);
+    fprintf(stderr, "thread #%d started\n", tNum);
 
     int workerStatus; // return value from worker
     steque_node_t *node;
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    ts.tv_sec += 1;
 
     pthread_mutex_lock(&mutexQ); // lock the Q so we're the only one to use it
-    while (numRequests == 0)
+    while (!isReady)
     {
-        // fprintf(stderr, "Stuck in infinite thread loop\n");
-        pthread_cond_wait(&condQ, &mutexQ);
+        fprintf(stderr, "thread #%d [isReady] %d \n", tNum, isReady);
+        int timeOut = pthread_cond_timedwait(&condQ, &mutexQ, &ts);
+        if (timeOut == ETIMEDOUT)
+        {
+            fprintf(stderr, "thread #%d [queue empty] %d\n", tNum, steque_isempty(request_queue));
+            return (void *)(unsigned long)0;
+        }
+        // if (!isReady && steque_isempty(request_queue) && timeOut == ETIMEDOUT)
+        // {
+        //     fprintf(stderr, "thread #%d [queue empty] %d\n", tNum, steque_isempty(request_queue));
+        //     return (void *)(unsigned long)0;
+        // }
+        // fprintf(stderr, "[thread] %ld [isReady] %d \n", pthread_self(), isReady);
     }
 
     if (!steque_isempty(request_queue))
     {
+        fprintf(stderr, "thread #%d received request\n", tNum);
         node = steque_pop(request_queue); // get the request at the front of the queue
-        numRequests--;                    // decrement the number of requests we have in the queue
     }
+
+    if (steque_isempty(request_queue))
+        isReady = false;
 
     // pthread_cond_signal(&condQ);
     pthread_mutex_unlock(&mutexQ); // now that we're done modifying the queue, unlock it
 
-    fprintf(stderr, "Inside thread. Calling worker function.\n");
-    workerStatus = worker((threadInfo_t *)node); // finally call the worker to handle the connection to the server
+    fprintf(stderr, "Inside thread #%d. Calling worker function.\n", tNum);
+    // fprintf(stderr, "Inside thread #%ld. Calling worker function.\n", pthread_self());
+    workerStatus = worker((threadInfo_t *)node, tNum); // finally call the worker to handle the connection to the server
 
     fprintf(stderr, "Returning from thread with status %d.\n", workerStatus);
 
-    pthread_exit((void *)(unsigned long)workerStatus);
+    return (void *)(unsigned long)workerStatus;
 }
 
 /* enqueue an item in a thread-safe manner and increase the numRequests tracker variable */
 void submit_to_queue(steque_t *q, threadInfo_t *element)
 {
-    pthread_mutex_lock(&mutexQ);
-    steque_enqueue(q, (steque_item)element);
-    numRequests++;
-    pthread_cond_signal(&condQ); // signal to thread to start work
-    pthread_mutex_unlock(&mutexQ);
+    pthread_mutex_lock(&mutexQ);             // lock the mutex for thread safety
+    steque_enqueue(q, (steque_item)element); // enque the element
+
     fprintf(stderr, "Added item #%d to queue\n", steque_size(request_queue));
+    pthread_cond_signal(&condQ);   // signal to thread pool to start work
+    isReady = true;                // tell the thread pool that the element is ready to use
+    pthread_mutex_unlock(&mutexQ); // unlock the mutex
 }
 
 /* Main ========================================================= */
@@ -283,29 +305,30 @@ int main(int argc, char **argv)
     info->port = port;
     info->server = server;
 
+    for (int j = 0; j < nrequests; j++)
+        submit_to_queue(request_queue, info);
+
+    int threadNumber[nthreads];
     // create the threads for the thread pool
     for (int i = 0; i < nthreads; i++)
     {
-        if (pthread_create(&thread_pool[i], NULL, thread_routine, NULL /*(void *)thread_pool[i]*/) != 0)
+        threadNumber[i] = i;
+        if (pthread_create(&thread_pool[i], NULL, thread_routine, &threadNumber[i]) != 0)
         {
             fprintf(stderr, "Failed to create threads.\n");
         }
     }
 
-    for (int j = 0; j < nrequests; j++)
-        submit_to_queue(request_queue, info);
-
-    // fprintf(stderr, "Trying to join threads.\n");
     for (int k = 0; k < nthreads; k++)
     {
         pthread_join(thread_pool[k], NULL);
-        fprintf(stderr, "Joining threads.\n");
-        // exit(0);
+        fprintf(stderr, "thread #%d joined\n", threadNumber[k]);
     }
+    // free(info);
+    //  pthread_cond_broadcast(&condQ); // wake all the remaining threads so they can exit
+    fprintf(stderr, "All threads joined.\n");
 
-    fprintf(stderr, "Join threads action completed.\n");
-
-    // pthread_exit(NULL); // ask the program to wait until the workers are done
+    pthread_exit(NULL); // ask the program to wait until the workers are done
     pthread_mutex_destroy(&mutexQ);
     pthread_cond_destroy(&condQ);
     steque_destroy(request_queue);
