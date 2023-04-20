@@ -185,25 +185,34 @@ void *thread_routine(void *args)
 
     int workerStatus; // return value from worker
     steque_node_t *node;
-    struct timespec ts;
-    clock_gettime(CLOCK_REALTIME, &ts);
-    ts.tv_sec += 1;
+    // struct timespec ts;
+    // clock_gettime(CLOCK_REALTIME, &ts);
+    // ts.tv_sec += 1;
 
     pthread_mutex_lock(&mutexQ); // lock the Q so we're the only one to use it
+
+    // while (steque_size(request_queue) == 0)
+    // {
+    //     pthread_cond_wait(&condQ, &mutexQ);
+    // }
+
     while (!isReady)
     {
         fprintf(stderr, "thread #%d [isReady] %d \n", tNum, isReady);
-        int timeOut = pthread_cond_timedwait(&condQ, &mutexQ, &ts);
-        if (timeOut == ETIMEDOUT)
-        {
-            fprintf(stderr, "thread #%d [queue empty] %d\n", tNum, steque_isempty(request_queue));
-            return (void *)(unsigned long)0;
-        }
-        // if (!isReady && steque_isempty(request_queue) && timeOut == ETIMEDOUT)
+        // int timeOut = pthread_cond_timedwait(&condQ, &mutexQ, &ts);
+        pthread_cond_wait(&condQ, &mutexQ);
+        // if (timeOut == ETIMEDOUT)
         // {
         //     fprintf(stderr, "thread #%d [queue empty] %d\n", tNum, steque_isempty(request_queue));
+        //     pthread_mutex_unlock(&mutexQ);
         //     return (void *)(unsigned long)0;
         // }
+        if (!isReady && steque_isempty(request_queue))
+        {
+            fprintf(stderr, "thread #%d [queue empty] %d\n", tNum, steque_isempty(request_queue));
+            pthread_mutex_unlock(&mutexQ);
+            return (void *)(unsigned long)0;
+        }
         // fprintf(stderr, "[thread] %ld [isReady] %d \n", pthread_self(), isReady);
     }
 
@@ -235,9 +244,9 @@ void submit_to_queue(steque_t *q, threadInfo_t *element)
     steque_enqueue(q, (steque_item)element); // enque the element
 
     fprintf(stderr, "Added item #%d to queue\n", steque_size(request_queue));
-    pthread_cond_signal(&condQ);   // signal to thread pool to start work
-    isReady = true;                // tell the thread pool that the element is ready to use
-    pthread_mutex_unlock(&mutexQ); // unlock the mutex
+    pthread_mutex_unlock(&mutexQ);  // unlock the mutex
+    isReady = true;                 // tell the thread pool that the element is ready to use
+    pthread_cond_broadcast(&condQ); // signal to thread pool to start work
 }
 
 /* Main ========================================================= */
@@ -305,9 +314,6 @@ int main(int argc, char **argv)
     info->port = port;
     info->server = server;
 
-    for (int j = 0; j < nrequests; j++)
-        submit_to_queue(request_queue, info);
-
     int threadNumber[nthreads];
     // create the threads for the thread pool
     for (int i = 0; i < nthreads; i++)
@@ -318,6 +324,9 @@ int main(int argc, char **argv)
             fprintf(stderr, "Failed to create threads.\n");
         }
     }
+
+    for (int j = 0; j < nrequests; j++)
+        submit_to_queue(request_queue, info);
 
     for (int k = 0; k < nthreads; k++)
     {
