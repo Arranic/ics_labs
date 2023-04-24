@@ -41,6 +41,7 @@ typedef struct threadInfo_t
     int returnCode;
     char *server;
     unsigned short port;
+    char path[256];
 } threadInfo_t;
 
 pthread_mutex_t mutexQ;
@@ -105,8 +106,8 @@ static void writecb(void *data, size_t data_len, void *arg)
 int worker(threadInfo_t *thread_info, int tNum)
 {
     int nrequests = thread_info->numRequests;
-    char *req_path;       // the path to the file
-    char local_path[512]; // to store the path to the local file
+    char *req_path = thread_info->path; // default path to the file
+    char local_path[512];               // to store the path to the local file
     FILE *file;
     gfcrequest_t *gfr; // gfcrequest item
     char server[100];
@@ -114,11 +115,12 @@ int worker(threadInfo_t *thread_info, int tNum)
     unsigned short port = thread_info->port;
     int returncode;
     int returnStatus = 0;
+    int i = 0;
 
-    fprintf(stderr, "Inside thread #%d. Making requests.\n", tNum);
+    fprintf(stderr, "Inside thread #%d. Making %d requests.\n", tNum, nrequests);
     // fprintf(stderr, "Inside thread #%ld. Making requests.\n", pthread_self());
     /*Making the requests...*/
-    for (int i = 0; i < nrequests; i++)
+    for (; i < nrequests; i++)
     {
 
         req_path = workload_get_path();
@@ -171,9 +173,10 @@ int worker(threadInfo_t *thread_info, int tNum)
         fprintf(stderr, "Received %zu of %zu bytes\n", gfc_get_bytesreceived(gfr), gfc_get_filelen(gfr));
 
         gfc_cleanup(gfr);
+        fprintf(stderr, "thread #%d. Completed request #%d of %d requests.\n", tNum, i + 1, nrequests);
     }
 
-    fprintf(stderr, "Returning from worker function with status: %d.\n", returncode);
+    fprintf(stderr, "Returning from worker function with status: %d. %d requests complete.\n", returncode, i);
     return returnStatus;
 }
 
@@ -181,7 +184,7 @@ int worker(threadInfo_t *thread_info, int tNum)
 void *thread_routine(void *args)
 {
     int tNum = *((int *)args);
-    fprintf(stderr, "thread #%d started\n", tNum);
+    // fprintf(stderr, "thread #%d started\n", tNum);
 
     int workerStatus; // return value from worker
     steque_node_t *node;
@@ -198,7 +201,7 @@ void *thread_routine(void *args)
 
     while (!isReady)
     {
-        fprintf(stderr, "thread #%d [isReady] %d \n", tNum, isReady);
+        // fprintf(stderr, "thread #%d [isReady] %d \n", tNum, isReady);
         // int timeOut = pthread_cond_timedwait(&condQ, &mutexQ, &ts);
         pthread_cond_wait(&condQ, &mutexQ);
         // if (timeOut == ETIMEDOUT)
@@ -209,7 +212,7 @@ void *thread_routine(void *args)
         // }
         if (!isReady && steque_isempty(request_queue))
         {
-            fprintf(stderr, "thread #%d [queue empty] %d\n", tNum, steque_isempty(request_queue));
+            // fprintf(stderr, "thread #%d [queue empty] %d (1 is true, 0 is false)\n", tNum, steque_isempty(request_queue));
             pthread_mutex_unlock(&mutexQ);
             return (void *)(unsigned long)0;
         }
@@ -313,9 +316,10 @@ int main(int argc, char **argv)
     info->numThreads = nthreads;
     info->port = port;
     info->server = server;
+    strncpy(info->path, workload_path, 255); // necessary if using the default path
 
-    int threadNumber[nthreads];
     // create the threads for the thread pool
+    int threadNumber[nthreads];
     for (int i = 0; i < nthreads; i++)
     {
         threadNumber[i] = i;
@@ -333,11 +337,9 @@ int main(int argc, char **argv)
         pthread_join(thread_pool[k], NULL);
         fprintf(stderr, "thread #%d joined\n", threadNumber[k]);
     }
-    // free(info);
-    //  pthread_cond_broadcast(&condQ); // wake all the remaining threads so they can exit
+
     fprintf(stderr, "All threads joined.\n");
 
-    pthread_exit(NULL); // ask the program to wait until the workers are done
     pthread_mutex_destroy(&mutexQ);
     pthread_cond_destroy(&condQ);
     steque_destroy(request_queue);
